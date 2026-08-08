@@ -23,6 +23,15 @@ application, stages a real `.app` bundle, and launches it from the menu bar.
 
 ## Release packaging
 
+For a private friend preview, create an unsigned/ad hoc-signed DMG:
+
+```sh
+./script/package_preview.sh
+```
+
+The resulting `dist/QuietCue-Preview.dmg` is intended for testing only. A
+friend may need to right-click the app and choose **Open** on first launch.
+
 The release script creates a Developer ID-signed ZIP. It requires a locally
 installed `Developer ID Application` certificate:
 
