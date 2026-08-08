@@ -119,7 +119,7 @@ struct MenuContent: View {
         isOn: Binding<Bool>,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
-        Toggle(isOn: isOn) {
+        HStack(spacing: 10) {
             HStack(spacing: 10) {
                 icon()
                     .frame(width: 23, height: 23)
@@ -128,8 +128,15 @@ struct MenuContent: View {
                 Text(title)
                     .font(.body)
             }
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(Text(title))
         }
-        .toggleStyle(.switch)
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
     }
 }
