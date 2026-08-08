@@ -69,18 +69,18 @@ struct MenuContent: View {
             .help("退出 QuietCue")
             .accessibilityLabel("退出 QuietCue")
         }
-        .padding(16)
-        .frame(width: 332)
+        .padding(14)
+        .frame(width: 300)
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             HeaderGlyph(isActive: model.isMicrophoneActive)
 
             Text("QuietCue")
                 .font(.headline)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
 
             Circle()
                 .fill(model.isEnabled ? Color.green : Color.secondary)
@@ -91,7 +91,7 @@ struct MenuContent: View {
     }
 
     private var stateFlow: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             StateTile(
                 systemImage: model.isMicrophoneActive ? "mic.fill" : "mic",
                 label: microphoneLabel,
@@ -99,7 +99,7 @@ struct MenuContent: View {
             )
 
             Image(systemName: "arrow.right")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(model.isMicrophoneActive ? Color.accentColor : Color.secondary)
                 .accessibilityHidden(true)
 
@@ -110,7 +110,7 @@ struct MenuContent: View {
             )
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder
@@ -122,7 +122,7 @@ struct MenuContent: View {
         Toggle(isOn: isOn) {
             HStack(spacing: 10) {
                 icon()
-                    .frame(width: 25, height: 25)
+                    .frame(width: 23, height: 23)
                     .foregroundStyle(.secondary)
 
                 Text(title)
@@ -130,7 +130,7 @@ struct MenuContent: View {
             }
         }
         .toggleStyle(.switch)
-        .padding(.vertical, 5)
+        .padding(.vertical, 4)
     }
 }
 
