@@ -184,32 +184,79 @@ private struct StateTile: View {
 
 private struct AutomationGlyph: View {
     var body: some View {
-        HStack(spacing: 1) {
-            Image(systemName: "mic")
-                .font(.system(size: 12, weight: .semibold))
+        Canvas { context, size in
+            let stroke = StrokeStyle(lineWidth: 1.55, lineCap: .round, lineJoin: .round)
 
-            Image(systemName: "arrow.right")
-                .font(.system(size: 11, weight: .bold))
+            var microphone = Path()
+            microphone.addRoundedRect(
+                in: CGRect(x: 1.5, y: 3, width: 5.5, height: 9),
+                cornerSize: CGSize(width: 2.75, height: 2.75)
+            )
+            context.stroke(microphone, with: .foreground, style: stroke)
 
-            Image(systemName: "pause.fill")
-                .font(.system(size: 10, weight: .bold))
+            var microphoneStand = Path()
+            microphoneStand.move(to: CGPoint(x: 0.5, y: 9))
+            microphoneStand.addCurve(
+                to: CGPoint(x: 8, y: 9),
+                control1: CGPoint(x: 0.5, y: 15),
+                control2: CGPoint(x: 8, y: 15)
+            )
+            microphoneStand.move(to: CGPoint(x: 4.25, y: 15))
+            microphoneStand.addLine(to: CGPoint(x: 4.25, y: 19.5))
+            microphoneStand.move(to: CGPoint(x: 1.5, y: 19.5))
+            microphoneStand.addLine(to: CGPoint(x: 7, y: 19.5))
+            context.stroke(microphoneStand, with: .foreground, style: stroke)
+
+            var arrow = Path()
+            arrow.move(to: CGPoint(x: 10, y: 11.5))
+            arrow.addLine(to: CGPoint(x: 16.5, y: 11.5))
+            arrow.move(to: CGPoint(x: 14, y: 8.75))
+            arrow.addLine(to: CGPoint(x: 17, y: 11.5))
+            arrow.addLine(to: CGPoint(x: 14, y: 14.25))
+            context.stroke(arrow, with: .foreground, style: stroke)
+
+            var pause = Path()
+            pause.move(to: CGPoint(x: 20, y: 9))
+            pause.addLine(to: CGPoint(x: 20, y: 14))
+            pause.move(to: CGPoint(x: 23, y: 9))
+            pause.addLine(to: CGPoint(x: 23, y: 14))
+            context.stroke(pause, with: .foreground, style: stroke)
         }
-        .frame(width: 23, height: 23, alignment: .leading)
+        .frame(width: 23, height: 23)
         .accessibilityLabel("麦克风触发自动暂停")
     }
 }
 
 private struct StartupGlyph: View {
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(systemName: "power")
-                .font(.system(size: 17, weight: .medium))
+        Canvas { context, size in
+            let stroke = StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round)
+            let center = CGPoint(x: 8, y: 13)
 
-            Image(systemName: "arrow.up")
-                .font(.system(size: 10, weight: .bold))
-                .offset(x: 5, y: -2)
+            var powerRing = Path()
+            powerRing.addArc(
+                center: center,
+                radius: 6.5,
+                startAngle: .degrees(-48),
+                endAngle: .degrees(228),
+                clockwise: false
+            )
+            context.stroke(powerRing, with: .foreground, style: stroke)
+
+            var powerStem = Path()
+            powerStem.move(to: CGPoint(x: 8, y: 3))
+            powerStem.addLine(to: CGPoint(x: 8, y: 12))
+            context.stroke(powerStem, with: .foreground, style: stroke)
+
+            var arrow = Path()
+            arrow.move(to: CGPoint(x: 17, y: 16))
+            arrow.addLine(to: CGPoint(x: 17, y: 4))
+            arrow.move(to: CGPoint(x: 14.5, y: 6.5))
+            arrow.addLine(to: CGPoint(x: 17, y: 4))
+            arrow.addLine(to: CGPoint(x: 19.5, y: 6.5))
+            context.stroke(arrow, with: .foreground, style: stroke)
         }
-        .frame(width: 23, height: 23, alignment: .leading)
+        .frame(width: 23, height: 23)
         .accessibilityLabel("登录时启动")
     }
 }
