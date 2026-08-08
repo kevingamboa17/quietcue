@@ -34,7 +34,12 @@ struct MicPauseApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(
+            isInserted: Binding(
+                get: { model.menuBarItemVisible },
+                set: { model.setMenuBarItemVisible($0) }
+            )
+        ) {
             MenuContent(model: model)
         } label: {
             Image(systemName: model.menuSymbol)
