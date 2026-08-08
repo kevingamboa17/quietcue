@@ -185,22 +185,31 @@ private struct StateTile: View {
 private struct AutomationGlyph: View {
     var body: some View {
         HStack(spacing: 1) {
-            Image(systemName: "mic.fill")
+            Image(systemName: "mic")
+                .font(.system(size: 12, weight: .semibold))
+
             Image(systemName: "arrow.right")
+                .font(.system(size: 11, weight: .bold))
+
             Image(systemName: "pause.fill")
+                .font(.system(size: 10, weight: .bold))
         }
-        .font(.system(size: 9, weight: .bold))
+        .frame(width: 23, height: 23, alignment: .leading)
         .accessibilityLabel("麦克风触发自动暂停")
     }
 }
 
 private struct StartupGlyph: View {
     var body: some View {
-        HStack(spacing: -2) {
+        ZStack(alignment: .topTrailing) {
             Image(systemName: "power")
+                .font(.system(size: 17, weight: .medium))
+
             Image(systemName: "arrow.up")
+                .font(.system(size: 10, weight: .bold))
+                .offset(x: 5, y: -2)
         }
-        .font(.system(size: 13, weight: .semibold))
+        .frame(width: 23, height: 23, alignment: .leading)
         .accessibilityLabel("登录时启动")
     }
 }
