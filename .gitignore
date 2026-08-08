@@ -1,0 +1,4 @@
+.build/
+dist/
+Sources/MicPause/Resources/MediaRemoteAdapter.framework/
+.DS_Store
