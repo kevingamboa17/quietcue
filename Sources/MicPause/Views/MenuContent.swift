@@ -53,22 +53,6 @@ struct MenuContent: View {
                 StartupGlyph()
             }
 
-            settingToggle(
-                title: "隐藏菜单栏",
-                isOn: Binding(
-                    get: { !model.menuBarItemVisible },
-                    set: { model.setMenuBarItemVisible(!$0) }
-                )
-            ) {
-                MenuBarGlyph()
-            }
-
-            Text("恢复显示：⌃⌥⌘Q")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 33)
-                .padding(.top, -1)
-
             Divider()
                 .padding(.vertical, 12)
 
@@ -218,13 +202,5 @@ private struct StartupGlyph: View {
         }
         .font(.system(size: 13, weight: .semibold))
         .accessibilityLabel("登录时启动")
-    }
-}
-
-private struct MenuBarGlyph: View {
-    var body: some View {
-        Image(systemName: "menubar.rectangle")
-            .font(.system(size: 13, weight: .semibold))
-            .accessibilityLabel("隐藏菜单栏图标")
     }
 }

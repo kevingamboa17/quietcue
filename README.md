@@ -11,7 +11,6 @@ when QuietCue still owns the paused session.
 - Spotify, Chrome/YouTube, Apple Music, and other apps reported by Now Playing
 - Manual media changes during microphone use take precedence
 - No audio is recorded or uploaded
-- The menu bar icon can be hidden from the in-app control; press `Control-Option-Command-Q` to show it again
 
 ## Build and run
 

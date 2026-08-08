@@ -11,13 +11,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var statusText = "等待麦克风"
     @Published private(set) var mediaStatus = "正在连接媒体控制"
     @Published private(set) var launchAtLoginEnabled = false
-    @Published private(set) var menuBarItemVisible: Bool
     @Published var isEnabled: Bool
 
     private let logger = Logger(subsystem: "com.local.MicPause", category: "coordinator")
     private let microphoneMonitor = MicrophoneActivityMonitor()
     private let mediaClient = MediaRemoteClient()
-    private let menuBarHotKey = GlobalHotKey()
 
     private var microphoneIsActive = false
     private var baselineReady = false
@@ -34,15 +32,6 @@ final class AppModel: ObservableObject {
     init() {
         isEnabled = UserDefaults.standard.object(forKey: "MicPause.enabled") as? Bool ?? true
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
-        menuBarItemVisible = UserDefaults.standard.object(forKey: "MicPause.menuBarItemVisible") as? Bool ?? true
-
-        menuBarHotKey.onPress = { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                setMenuBarItemVisible(!menuBarItemVisible)
-            }
-        }
-        menuBarHotKey.register()
 
         mediaClient.onSnapshot = { [weak self] snapshot in
             Task { @MainActor [weak self] in
@@ -122,13 +111,6 @@ final class AppModel: ObservableObject {
             logger.error("登录启动设置失败: \(error.localizedDescription, privacy: .public)")
             launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
         }
-    }
-
-    func setMenuBarItemVisible(_ visible: Bool) {
-        guard visible != menuBarItemVisible else { return }
-        menuBarItemVisible = visible
-        UserDefaults.standard.set(visible, forKey: "MicPause.menuBarItemVisible")
-        statusText = visible ? "菜单栏图标已显示" : "菜单栏图标已隐藏"
     }
 
     func quit() {
