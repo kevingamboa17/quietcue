@@ -13,6 +13,7 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+ICON_SOURCE="$ROOT_DIR/Assets/QuietCue.icns"
 ADAPTER_SOURCE="$ROOT_DIR/Vendor/mediaremote-adapter"
 ADAPTER_BUILD="$ROOT_DIR/.build/mediaremote-adapter-release"
 NOTARY_PROFILE="${NOTARY_PROFILE:-quietcue-notary}"
@@ -63,6 +64,8 @@ cat > "$INFO_PLIST" <<PLIST
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
   <string>$DISPLAY_NAME</string>
+  <key>CFBundleIconFile</key>
+  <string>QuietCue.icns</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
@@ -79,6 +82,7 @@ PLIST
 
 cp "$ADAPTER_SOURCE/bin/mediaremote-adapter.pl" "$APP_RESOURCES/mediaremote-adapter.pl"
 cp -R "$ADAPTER_BUILD/MediaRemoteAdapter.framework" "$APP_RESOURCES/MediaRemoteAdapter.framework"
+cp "$ICON_SOURCE" "$APP_RESOURCES/QuietCue.icns"
 
 codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" \
   "$APP_RESOURCES/MediaRemoteAdapter.framework"
