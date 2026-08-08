@@ -20,3 +20,20 @@ when QuietCue still owns the paused session.
 
 The build script compiles the bundled MediaRemote adapter, builds the SwiftPM
 application, stages a real `.app` bundle, and launches it from the menu bar.
+
+## Release packaging
+
+The release script creates a Developer ID-signed ZIP. It requires a locally
+installed `Developer ID Application` certificate:
+
+```sh
+./script/package_release.sh
+```
+
+After storing Apple notarization credentials in a keychain profile, set
+`NOTARIZE=1` to submit the ZIP, staple the notarization ticket, and validate
+the final app:
+
+```sh
+NOTARIZE=1 NOTARY_PROFILE=quietcue-notary ./script/package_release.sh
+```
