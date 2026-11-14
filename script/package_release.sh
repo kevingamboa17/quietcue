@@ -27,16 +27,16 @@ find_signing_identity() {
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-$(find_signing_identity)}"
 if [[ -z "$SIGNING_IDENTITY" ]]; then
   cat >&2 <<'MESSAGE'
-未找到 Developer ID Application 证书。
-请先在这台 Mac 的钥匙串中安装类似下面名称的证书：
-  Developer ID Application: 你的姓名 (TEAMID)
-安装完成后重新运行本脚本。
+No Developer ID Application certificate was found.
+Install a certificate in this Mac's keychain with a name like:
+  Developer ID Application: Your Name (TEAMID)
+Then run this script again.
 MESSAGE
   exit 3
 fi
 
 if [[ "$SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
-  echo "SIGNING_IDENTITY 必须是 Developer ID Application 证书。" >&2
+  echo "SIGNING_IDENTITY must be a Developer ID Application certificate." >&2
   exit 3
 fi
 
@@ -94,9 +94,9 @@ codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 ZIP_PATH="$RELEASE_DIR/$DISPLAY_NAME.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 
-echo "已生成签名发行包：$ZIP_PATH"
-echo "签名证书：$SIGNING_IDENTITY"
-echo "如需公证，请先配置 keychain profile：$NOTARY_PROFILE"
+echo "Signed release package: $ZIP_PATH"
+echo "Signing identity: $SIGNING_IDENTITY"
+echo "To notarize, configure a keychain profile first: $NOTARY_PROFILE"
 
 if [[ "${NOTARIZE:-0}" == "1" ]]; then
   xcrun notarytool submit "$ZIP_PATH" \
@@ -106,5 +106,5 @@ if [[ "${NOTARIZE:-0}" == "1" ]]; then
   xcrun stapler validate "$APP_BUNDLE"
   ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$ZIP_PATH"
   spctl -a -vv "$APP_BUNDLE"
-  echo "公证完成：$ZIP_PATH"
+  echo "Notarization complete: $ZIP_PATH"
 fi

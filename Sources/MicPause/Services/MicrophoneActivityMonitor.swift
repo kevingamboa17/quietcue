@@ -51,7 +51,7 @@ final class MicrophoneActivityMonitor {
                 let bundleIdentifier = try? process.bundleID
                 let name = NSRunningApplication(processIdentifier: pid)?.localizedName
                     ?? bundleIdentifier
-                    ?? "未知应用"
+                    ?? "Unknown app"
                 return MicrophoneProcess(
                     pid: pid,
                     bundleIdentifier: bundleIdentifier ?? nil,

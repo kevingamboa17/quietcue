@@ -8,18 +8,28 @@ import ServiceManagement
 final class AppModel: ObservableObject {
     @Published private(set) var microphoneProcesses: [MicrophoneProcess] = []
     @Published private(set) var currentMedia: MediaSnapshot?
-    @Published private(set) var statusText = "等待麦克风"
-    @Published private(set) var mediaStatus = "正在连接媒体控制"
+    @Published private(set) var statusText = "Waiting for microphone"
+    @Published private(set) var mediaStatus = "Connecting to media controls"
     @Published private(set) var launchAtLoginEnabled = false
+    @Published private(set) var actionMode: MicActionMode
+    @Published private(set) var duckVolume: Double
     @Published var isEnabled: Bool
 
     private let logger = Logger(subsystem: "com.local.MicPause", category: "coordinator")
     private let microphoneMonitor = MicrophoneActivityMonitor()
     private let mediaClient = MediaRemoteClient()
+    private let volumeController = SystemVolumeController()
 
     private var microphoneIsActive = false
     private var baselineReady = false
     private var ownedPause: OwnedPause?
+    private var ownedDuck: OwnedDuck?
+    private var previewDuck: OwnedDuck?
+    private var previewRestoreTask: Task<Void, Never>?
+    private var previewDebounceTask: Task<Void, Never>?
+    private var isSliderEditing = false
+    private let previewIdleDelayNanoseconds: UInt64 = 700_000_000
+    private let previewHoldNanoseconds: UInt64 = 3_000_000_000
 
     private struct OwnedPause: Sendable {
         let identity: String
@@ -29,8 +39,16 @@ final class AppModel: ObservableObject {
         var invalidated = false
     }
 
+    private struct OwnedDuck {
+        let original: SystemVolumeSnapshot
+        var duckedTo: Float
+        var invalidated = false
+    }
+
     init() {
         isEnabled = UserDefaults.standard.object(forKey: "MicPause.enabled") as? Bool ?? true
+        actionMode = MicActionMode.persisted()
+        duckVolume = MicActionMode.persistedDuckVolume()
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
 
         mediaClient.onSnapshot = { [weak self] snapshot in
@@ -42,7 +60,7 @@ final class AppModel: ObservableObject {
             self?.handleMicrophoneUpdate(processes, isInitial: isInitial)
         }
 
-        mediaStatus = mediaClient.isAvailable ? "媒体控制已连接" : "媒体控制不可用"
+        mediaStatus = mediaClient.isAvailable ? "Media controls connected" : "Media controls unavailable"
         mediaClient.startStream()
         microphoneMonitor.start()
     }
@@ -53,10 +71,10 @@ final class AppModel: ObservableObject {
     }
 
     var microphoneSummary: String {
-        guard !microphoneProcesses.isEmpty else { return "未检测到" }
+        guard !microphoneProcesses.isEmpty else { return "Not detected" }
         let names = microphoneProcesses.map(\.name)
         if names.count == 1 { return names[0] }
-        return "\(names[0]) 等 \(names.count) 个应用"
+        return "\(names[0]) and \(names.count - 1) more"
     }
 
     var isMicrophoneActive: Bool {
@@ -67,16 +85,25 @@ final class AppModel: ObservableObject {
         ownedPause != nil
     }
 
+    var isDuckSessionActive: Bool {
+        ownedDuck != nil
+    }
+
     var mediaSummary: String {
-        guard let currentMedia else { return "未检测到播放媒体" }
-        let state = currentMedia.isPlaying ? "播放中" : "已暂停"
+        guard let currentMedia else { return "No media playing" }
+        let state = currentMedia.isPlaying ? "Playing" : "Paused"
         return "\(currentMedia.applicationName) · \(state)"
+    }
+
+    var duckVolumePercent: Int {
+        Int((duckVolume * 100).rounded())
     }
 
     var menuSymbol: String {
         if !isEnabled { return "mic.slash" }
         if microphoneIsActive { return "mic.fill" }
         if ownedPause != nil { return "pause.circle.fill" }
+        if ownedDuck != nil { return "speaker.wave.1.fill" }
         return "mic"
     }
 
@@ -86,17 +113,87 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: "MicPause.enabled")
 
         if !enabled {
-            let session = ownedPause
+            let pauseSession = ownedPause
             ownedPause = nil
+            let duckSession = ownedDuck
+            ownedDuck = nil
             baselineReady = false
-            statusText = "自动暂停已关闭"
-            if let session {
-                restoreIfSafe(session, reason: "功能关闭", allowWhileMicrophoneActive: true)
+            statusText = "Auto pause is off"
+            endVolumePreview(restore: true)
+            if let pauseSession {
+                restoreIfSafe(pauseSession, reason: "feature disabled", allowWhileMicrophoneActive: true)
+            }
+            if let duckSession {
+                restoreDuckIfSafe(duckSession)
             }
         } else {
             baselineReady = microphoneProcesses.isEmpty
-            statusText = baselineReady ? "等待麦克风" : "等待当前麦克风使用结束"
+            statusText = baselineReady ? "Waiting for microphone" : "Waiting for current microphone use to end"
         }
+    }
+
+    func setActionMode(_ mode: MicActionMode) {
+        guard mode != actionMode else { return }
+        actionMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: MicActionMode.Keys.actionMode)
+        endVolumePreview(restore: true)
+
+        guard isEnabled, baselineReady, microphoneIsActive else { return }
+
+        let pauseSession = ownedPause
+        ownedPause = nil
+        let duckSession = ownedDuck
+        ownedDuck = nil
+        if let pauseSession {
+            restoreIfSafe(pauseSession, reason: "action mode changed", allowWhileMicrophoneActive: true)
+        }
+        if let duckSession {
+            restoreDuckIfSafe(duckSession)
+        }
+
+        beginActionSession()
+    }
+
+    func setDuckVolume(_ volume: Double) {
+        let clamped = min(1, max(0, volume))
+        duckVolume = clamped
+        UserDefaults.standard.set(clamped, forKey: MicActionMode.Keys.duckVolume)
+
+        if var session = ownedDuck, !session.invalidated {
+            let target = DuckPolicy.appliedTarget(
+                originalVolume: session.original.volume,
+                requestedTarget: Float(clamped)
+            )
+
+            if !DuckPolicy.shouldBeginDuck(
+                currentVolume: session.original.volume,
+                isMuted: session.original.isMuted,
+                targetVolume: target
+            ) {
+                ownedDuck = nil
+                restoreDuckIfSafe(session)
+                return
+            }
+
+            guard volumeController.setVolume(target) else { return }
+            session.duckedTo = target
+            ownedDuck = session
+            statusText = "Volume lowered to \(percentString(target))"
+            return
+        }
+
+        schedulePreviewAfterSliderSettles()
+    }
+
+    func setDuckSliderEditing(_ editing: Bool) {
+        isSliderEditing = editing
+        previewDebounceTask?.cancel()
+        previewDebounceTask = nil
+        if editing {
+            endVolumePreview(restore: true)
+            return
+        }
+        startVolumePreview()
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -108,16 +205,22 @@ final class AppModel: ObservableObject {
             }
             launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
         } catch {
-            logger.error("登录启动设置失败: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to update login item: \(error.localizedDescription, privacy: .public)")
             launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
         }
     }
 
     func quit() {
-        let session = ownedPause
+        let pauseSession = ownedPause
         ownedPause = nil
-        if let session {
-            restoreIfSafe(session, reason: "退出应用", allowWhileMicrophoneActive: true)
+        let duckSession = ownedDuck
+        ownedDuck = nil
+        endVolumePreview(restore: true)
+        if let pauseSession {
+            restoreIfSafe(pauseSession, reason: "app quit", allowWhileMicrophoneActive: true)
+        }
+        if let duckSession {
+            restoreDuckIfSafe(duckSession)
         }
         DispatchQueue.main.async {
             NSApplication.shared.terminate(nil)
@@ -131,7 +234,7 @@ final class AppModel: ObservableObject {
 
         if isInitial {
             baselineReady = !microphoneIsActive
-            statusText = baselineReady ? "等待麦克风" : "等待当前麦克风使用结束"
+            statusText = baselineReady ? "Waiting for microphone" : "Waiting for current microphone use to end"
             return
         }
 
@@ -140,15 +243,15 @@ final class AppModel: ObservableObject {
         if !baselineReady {
             if !microphoneIsActive {
                 baselineReady = true
-                statusText = "等待麦克风"
+                statusText = "Waiting for microphone"
             }
             return
         }
 
         if !wasActive && microphoneIsActive {
-            beginPauseSession()
+            beginActionSession()
         } else if wasActive && !microphoneIsActive {
-            endPauseSession()
+            endActionSession()
         }
     }
 
@@ -162,34 +265,58 @@ final class AppModel: ObservableObject {
 
         if snapshot.identity != session.identity {
             session.invalidated = true
-            statusText = "媒体已切换，不自动恢复"
+            statusText = "Media changed; not restoring"
         } else if !snapshot.isPlaying {
             session.pauseConfirmed = true
         } else if session.pauseConfirmed {
             session.invalidated = true
-            statusText = "检测到人工播放，不自动干预"
+            statusText = "Playback resumed manually; not intervening"
         }
 
         ownedPause = session
     }
 
+    private func beginActionSession() {
+        switch actionMode {
+        case .pause:
+            beginPauseSession()
+        case .duck:
+            beginDuckSession()
+        }
+    }
+
+    private func endActionSession() {
+        let hadSession = ownedPause != nil || ownedDuck != nil
+        if let session = ownedPause {
+            ownedPause = nil
+            restoreIfSafe(session, reason: "microphone released", allowWhileMicrophoneActive: false)
+        }
+        if let session = ownedDuck {
+            ownedDuck = nil
+            restoreDuckIfSafe(session)
+        }
+        if !hadSession {
+            statusText = "Waiting for microphone"
+        }
+    }
+
     private func beginPauseSession() {
         guard isEnabled, ownedPause == nil else { return }
-        statusText = "正在检查当前媒体"
+        statusText = "Checking current media"
 
         Task { [weak self] in
             guard let self else { return }
             let snapshot = await mediaClient.snapshot()
-            guard microphoneIsActive, isEnabled else { return }
+            guard microphoneIsActive, isEnabled, actionMode == .pause else { return }
             currentMedia = snapshot
 
             guard let snapshot, snapshot.isPlaying else {
-                statusText = snapshot == nil ? "没有可暂停的媒体" : "媒体原本已暂停"
+                statusText = snapshot == nil ? "No media to pause" : "Media was already paused"
                 return
             }
 
             let succeeded = await mediaClient.send(.pause)
-            guard microphoneIsActive, isEnabled else {
+            guard microphoneIsActive, isEnabled, actionMode == .pause else {
                 if succeeded {
                     _ = await mediaClient.send(.play)
                 }
@@ -197,8 +324,8 @@ final class AppModel: ObservableObject {
             }
 
             guard succeeded else {
-                mediaStatus = "媒体暂停失败"
-                statusText = "媒体未暂停"
+                mediaStatus = "Failed to pause media"
+                statusText = "Media was not paused"
                 return
             }
 
@@ -207,18 +334,57 @@ final class AppModel: ObservableObject {
                 applicationName: snapshot.applicationName,
                 title: snapshot.title
             )
-            statusText = "已暂停 \(snapshot.applicationName)"
-            logger.info("暂停媒体: \(snapshot.applicationName, privacy: .public) / \(snapshot.title, privacy: .public)")
+            statusText = "Paused \(snapshot.applicationName)"
+            logger.info("Paused media: \(snapshot.applicationName, privacy: .public) / \(snapshot.title, privacy: .public)")
         }
     }
 
-    private func endPauseSession() {
-        guard let session = ownedPause else {
-            statusText = "等待麦克风"
+    private func beginDuckSession() {
+        guard isEnabled, ownedDuck == nil else { return }
+        statusText = "Checking system volume"
+
+        let preview = previewDuck
+        endVolumePreview(restore: false)
+
+        let snapshot: SystemVolumeSnapshot
+        if let preview,
+           DuckPolicy.shouldRestore(
+            currentVolume: volumeController.snapshot()?.volume,
+            duckedTo: preview.duckedTo,
+            invalidated: false
+           ) {
+            snapshot = preview.original
+        } else if let current = volumeController.snapshot() {
+            snapshot = current
+        } else {
+            statusText = "Could not read system volume"
             return
         }
-        ownedPause = nil
-        restoreIfSafe(session, reason: "麦克风释放", allowWhileMicrophoneActive: false)
+        guard microphoneIsActive, isEnabled, actionMode == .duck else { return }
+
+        let target = DuckPolicy.appliedTarget(
+            originalVolume: snapshot.volume,
+            requestedTarget: Float(duckVolume)
+        )
+        guard DuckPolicy.shouldBeginDuck(
+            currentVolume: snapshot.volume,
+            isMuted: snapshot.isMuted,
+            targetVolume: target
+        ) else {
+            statusText = snapshot.isMuted
+                ? "Output is muted; leaving volume unchanged"
+                : "Volume already at or below duck level"
+            return
+        }
+
+        guard volumeController.setVolume(target) else {
+            statusText = "Could not lower volume"
+            return
+        }
+
+        ownedDuck = OwnedDuck(original: snapshot, duckedTo: target)
+        statusText = "Volume lowered to \(percentString(target))"
+        logger.info("Lowered system volume to \(self.percentString(target), privacy: .public)")
     }
 
     private func restoreIfSafe(_ session: OwnedPause, reason: String, allowWhileMicrophoneActive: Bool) {
@@ -234,13 +400,99 @@ final class AppModel: ObservableObject {
                 microphoneIsActive: microphoneIsActive,
                 allowWhileMicrophoneActive: allowWhileMicrophoneActive
             ) else {
-                statusText = "保持媒体当前状态"
+                statusText = "Keeping current media state"
                 return
             }
 
             let succeeded = await mediaClient.send(.play)
-            statusText = succeeded ? "已恢复 \(session.applicationName)" : "媒体恢复失败"
-            logger.info("恢复媒体 (\(reason, privacy: .public)): \(session.applicationName, privacy: .public)")
+            statusText = succeeded ? "Resumed \(session.applicationName)" : "Failed to resume media"
+            logger.info("Resumed media (\(reason, privacy: .public)): \(session.applicationName, privacy: .public)")
         }
+    }
+
+    private func restoreDuckIfSafe(_ session: OwnedDuck) {
+        let current = volumeController.snapshot()
+        guard DuckPolicy.shouldRestore(
+            currentVolume: current?.volume,
+            duckedTo: session.duckedTo,
+            invalidated: session.invalidated
+        ) else {
+            statusText = "Keeping current volume"
+            return
+        }
+
+        let succeeded = volumeController.setVolume(session.original.volume)
+        if session.original.isMuted {
+            _ = volumeController.setMuted(true)
+        }
+        statusText = succeeded ? "Volume restored" : "Failed to restore volume"
+        if succeeded {
+            logger.info("Restored system volume")
+        }
+    }
+
+    private func schedulePreviewAfterSliderSettles() {
+        previewDebounceTask?.cancel()
+        guard !isSliderEditing, ownedDuck == nil else { return }
+        previewDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: previewIdleDelayNanoseconds)
+            guard !Task.isCancelled, !isSliderEditing else { return }
+            startVolumePreview()
+        }
+    }
+
+    private func startVolumePreview() {
+        guard isEnabled, actionMode == .duck, ownedDuck == nil else { return }
+
+        let original: SystemVolumeSnapshot
+        if let previewDuck {
+            original = previewDuck.original
+        } else if let snapshot = volumeController.snapshot() {
+            original = snapshot
+        } else {
+            return
+        }
+
+        let target = DuckPolicy.appliedTarget(
+            originalVolume: original.volume,
+            requestedTarget: Float(duckVolume)
+        )
+        guard DuckPolicy.shouldBeginDuck(
+            currentVolume: original.volume,
+            isMuted: original.isMuted,
+            targetVolume: target
+        ) else {
+            endVolumePreview(restore: true)
+            return
+        }
+
+        guard volumeController.setVolume(target) else { return }
+        previewDuck = OwnedDuck(original: original, duckedTo: target)
+        statusText = "Previewing duck to \(percentString(target))"
+        schedulePreviewRestore()
+    }
+
+    private func schedulePreviewRestore() {
+        previewRestoreTask?.cancel()
+        previewRestoreTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: previewHoldNanoseconds)
+            guard !Task.isCancelled else { return }
+            endVolumePreview(restore: true)
+        }
+    }
+
+    private func endVolumePreview(restore: Bool) {
+        previewDebounceTask?.cancel()
+        previewDebounceTask = nil
+        previewRestoreTask?.cancel()
+        previewRestoreTask = nil
+        guard let session = previewDuck else { return }
+        previewDuck = nil
+        guard restore else { return }
+        restoreDuckIfSafe(session)
+    }
+
+    private func percentString(_ volume: Float) -> String {
+        "\(Int((volume * 100).rounded()))%"
     }
 }

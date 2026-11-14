@@ -15,10 +15,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             let alert = NSAlert()
-            alert.messageText = "让 QuietCue 登录时自动运行吗？"
-            alert.informativeText = "QuietCue 需要常驻菜单栏，才能在语音输入开始时暂停当前媒体。"
-            alert.addButton(withTitle: "开启")
-            alert.addButton(withTitle: "暂不")
+            alert.messageText = "Open QuietCue automatically when you log in?"
+            alert.informativeText = "QuietCue stays in the menu bar so it can pause or lower media as soon as microphone use starts."
+            alert.addButton(withTitle: "Enable")
+            alert.addButton(withTitle: "Not now")
             NSApp.activate(ignoringOtherApps: true)
 
             if alert.runModal() == .alertFirstButtonReturn {

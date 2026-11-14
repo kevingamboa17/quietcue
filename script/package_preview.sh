@@ -30,4 +30,4 @@ hdiutil create \
   "$DMG_PATH" >/dev/null
 
 rm -rf "$PREVIEW_ROOT"
-echo "已生成测试版 DMG：$DMG_PATH"
+echo "Preview DMG created: $DMG_PATH"

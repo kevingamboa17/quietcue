@@ -4,7 +4,7 @@
   <img src="Assets/QuietCue-icon-white.png" width="160" alt="QuietCue logo">
 </p>
 
-<p align="center"><strong>A quiet macOS menu bar utility that pauses the media you are currently playing while the microphone is in use.</strong></p>
+<p align="center"><strong>A quiet macOS menu bar utility that pauses or ducks the media you are currently playing while the microphone is in use.</strong></p>
 
 ## Interface preview
 
@@ -16,7 +16,7 @@ This is a clean documentation preview of the menu bar experience. The native app
 
 ## What it does
 
-QuietCue watches for active microphone processes. When microphone use starts, it asks macOS for the current **Now Playing** session and pauses that session. When microphone use ends, it resumes the same session only if QuietCue still owns the pause.
+QuietCue watches for active microphone processes. When microphone use starts, it either pauses the current **Now Playing** session or lowers the Mac's output volume to a level you choose. When microphone use ends, it restores playback or the previous volume only if QuietCue still owns that change.
 
 ## Behavior and features
 
@@ -24,7 +24,8 @@ QuietCue watches for active microphone processes. When microphone use starts, it
 - Controls the current Now Playing session instead of pausing every audio app.
 - Supports Spotify, Chrome/YouTube, Apple Music, and other players that expose media controls to macOS.
 - Manual media changes take precedence: if you switch players, change tracks, or resume playback yourself, QuietCue will not unexpectedly resume the old session.
-- Menu bar controls include **Auto pause**, **Launch at login**, and **Exit**.
+- Menu bar controls include **Auto pause**, a **Pause** / **Lower volume** mode, a duck-to slider for system output volume, **Launch at login**, and **Quit**.
+- Lower-volume mode changes the Mac's speaker/headphone volume, not an in-app player slider. QuietCue restores the previous level when the microphone is released, unless you change volume yourself in the meantime.
 - The app runs as a lightweight menu bar utility with no Dock window.
 
 ## How it works
@@ -32,13 +33,12 @@ QuietCue watches for active microphone processes. When microphone use starts, it
 ```text
 Microphone becomes active
             ↓
-Read the current Now Playing session
-            ↓
-Pause it and remember ownership
+Pause Now Playing, or lower system volume to the slider level
             ↓
 Microphone is released
             ↓
-Resume only if the same session is still paused
+Resume the same session, or restore the previous volume,
+only if QuietCue still owns the change
 ```
 
 ## Requirements
@@ -47,6 +47,16 @@ Resume only if the same session is still paused
 - Apple Silicon for the current development build.
 - System microphone access when macOS requests it.
 - A media player or browser page that exposes Now Playing/media-remote controls.
+
+## Install
+
+After cloning this repository, from the project directory:
+
+```sh
+./script/install.sh
+```
+
+That command builds QuietCue, copies it to `/Applications/QuietCue.app`, and launches it. You need macOS 15 or newer, Apple Silicon, and Xcode Command Line Tools with CMake.
 
 ## Build and run
 
@@ -94,7 +104,7 @@ NOTARIZE=1 NOTARY_PROFILE=quietcue-notary ./script/package_release.sh
 Sources/MicPause/       SwiftUI menu bar app and state handling
 Vendor/                 Bundled MediaRemote adapter
 Assets/                 App icon and README interface preview
-script/                 Build, preview-DMG, and release packaging scripts
+script/                 Install, build, preview-DMG, and release packaging scripts
 Tests/                  Swift unit tests
 ```
 

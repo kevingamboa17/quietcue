@@ -34,7 +34,7 @@ struct MenuContent: View {
                 .padding(.vertical, 12)
 
             settingToggle(
-                title: "自动暂停",
+                title: "Auto pause",
                 isOn: Binding(
                     get: { model.isEnabled },
                     set: { model.setEnabled($0) }
@@ -43,8 +43,14 @@ struct MenuContent: View {
                 AutomationGlyph()
             }
 
+            actionModePicker
+
+            if model.actionMode == .duck {
+                duckSlider
+            }
+
             settingToggle(
-                title: "开机启动",
+                title: "Launch at login",
                 isOn: Binding(
                     get: { model.launchAtLoginEnabled },
                     set: { model.setLaunchAtLogin($0) }
@@ -59,15 +65,15 @@ struct MenuContent: View {
             Button {
                 model.quit()
             } label: {
-                Text("退出")
+                Text("Quit")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("退出 QuietCue")
-            .accessibilityLabel("退出 QuietCue")
+            .help("Quit QuietCue")
+            .accessibilityLabel("Quit QuietCue")
         }
         .padding(14)
         .frame(width: 300)
@@ -85,7 +91,7 @@ struct MenuContent: View {
             Circle()
                 .fill(model.isEnabled ? Color.green : Color.secondary)
                 .frame(width: 9, height: 9)
-                .accessibilityLabel(model.isEnabled ? "已启用" : "已停用")
+                .accessibilityLabel(model.isEnabled ? "Enabled" : "Disabled")
         }
         .frame(height: 34)
     }
@@ -111,6 +117,53 @@ struct MenuContent: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+    }
+
+    private var actionModePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("When the microphone is in use")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("When the microphone is in use", selection: Binding(
+                get: { model.actionMode },
+                set: { model.setActionMode($0) }
+            )) {
+                ForEach(MicActionMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(!model.isEnabled)
+        }
+        .padding(.vertical, 8)
+        .opacity(model.isEnabled ? 1 : 0.45)
+    }
+
+    private var duckSlider: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Duck to \(model.duckVolumePercent)%")
+                    .font(.body)
+                Spacer()
+            }
+
+            Slider(
+                value: Binding(
+                    get: { model.duckVolume },
+                    set: { model.setDuckVolume($0) }
+                ),
+                in: 0...1
+            ) { editing in
+                model.setDuckSliderEditing(editing)
+            }
+            .accessibilityLabel("Duck volume")
+            .accessibilityValue("\(model.duckVolumePercent) percent")
+        }
+        .padding(.bottom, 8)
+        .disabled(!model.isEnabled)
+        .opacity(model.isEnabled ? 1 : 0.45)
     }
 
     @ViewBuilder
@@ -195,7 +248,7 @@ private struct AutomationGlyph: View {
             .font(.system(size: 17, weight: .medium))
             .symbolRenderingMode(.monochrome)
             .frame(width: 23, height: 23)
-            .accessibilityLabel("自动暂停")
+            .accessibilityLabel("Auto pause")
     }
 }
 
@@ -205,6 +258,6 @@ private struct StartupGlyph: View {
             .font(.system(size: 18, weight: .medium))
             .symbolRenderingMode(.monochrome)
             .frame(width: 23, height: 23)
-            .accessibilityLabel("开机启动")
+            .accessibilityLabel("Launch at login")
     }
 }
