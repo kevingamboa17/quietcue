@@ -9,7 +9,7 @@
 ## Interface preview
 
 <p align="center">
-  <img src="Assets/QuietCue-readme-preview.png" width="360" alt="QuietCue menu bar interface preview">
+  <img src="Assets/QuietCue-menu-preview.png" width="360" alt="QuietCue menu bar interface preview">
 </p>
 
 This is a clean documentation preview of the menu bar experience. The native app stays in the menu bar, shows the current media session, and keeps the controls intentionally compact.
