@@ -48,6 +48,7 @@ final class MicrophoneActivityMonitor {
                     return nil
                 }
 
+                let isRunningOutput = (try? process.isRunningOutput) == true
                 let bundleIdentifier = try? process.bundleID
                 let name = NSRunningApplication(processIdentifier: pid)?.localizedName
                     ?? bundleIdentifier
@@ -55,7 +56,8 @@ final class MicrophoneActivityMonitor {
                 return MicrophoneProcess(
                     pid: pid,
                     bundleIdentifier: bundleIdentifier ?? nil,
-                    name: name
+                    name: name,
+                    isRunningOutput: isRunningOutput
                 )
             })
         } catch {

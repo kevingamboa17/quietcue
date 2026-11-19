@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     private let volumeController = SystemVolumeController()
 
     private var microphoneIsActive = false
+    private var rawMicrophoneProcesses: Set<MicrophoneProcess> = []
     private var baselineReady = false
     private var ownedPause: OwnedPause?
     private var ownedDuck: OwnedDuck?
@@ -28,8 +29,11 @@ final class AppModel: ObservableObject {
     private var previewRestoreTask: Task<Void, Never>?
     private var previewDebounceTask: Task<Void, Never>?
     private var isSliderEditing = false
+    private var duckSliderValueChangedWhileEditing = false
+    private var micActionConfirmTask: Task<Void, Never>?
     private let previewIdleDelayNanoseconds: UInt64 = 700_000_000
     private let previewHoldNanoseconds: UInt64 = 3_000_000_000
+    private let micActionConfirmDelayNanoseconds: UInt64 = 500_000_000
 
     private struct OwnedPause: Sendable {
         let identity: String
@@ -113,6 +117,7 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(enabled, forKey: "MicPause.enabled")
 
         if !enabled {
+            cancelMicActionSessionSchedule()
             let pauseSession = ownedPause
             ownedPause = nil
             let duckSession = ownedDuck
@@ -182,6 +187,10 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if isSliderEditing {
+            duckSliderValueChangedWhileEditing = true
+        }
+
         schedulePreviewAfterSliderSettles()
     }
 
@@ -190,9 +199,12 @@ final class AppModel: ObservableObject {
         previewDebounceTask?.cancel()
         previewDebounceTask = nil
         if editing {
+            duckSliderValueChangedWhileEditing = false
             endVolumePreview(restore: true)
             return
         }
+        guard duckSliderValueChangedWhileEditing else { return }
+        duckSliderValueChangedWhileEditing = false
         startVolumePreview()
     }
 
@@ -228,6 +240,20 @@ final class AppModel: ObservableObject {
     }
 
     private func handleMicrophoneUpdate(_ processes: Set<MicrophoneProcess>, isInitial: Bool) {
+        rawMicrophoneProcesses = processes
+        applyEffectiveMicrophoneState(isInitial: isInitial)
+    }
+
+    private func applyEffectiveMicrophoneState(isInitial: Bool) {
+        let processes = MicrophoneInUsePolicy.processesInUse(
+            detected: rawMicrophoneProcesses,
+            nowPlaying: currentMedia
+        )
+        if !rawMicrophoneProcesses.isEmpty, processes.count != rawMicrophoneProcesses.count {
+            let rawSummary = rawMicrophoneProcesses.map { "\($0.name)(\($0.bundleIdentifier ?? "no-bundle"))" }
+                .joined(separator: ", ")
+            logger.debug("Filtered microphone detections: \(rawSummary, privacy: .public)")
+        }
         microphoneProcesses = processes.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         let wasActive = microphoneIsActive
         microphoneIsActive = !processes.isEmpty
@@ -249,14 +275,34 @@ final class AppModel: ObservableObject {
         }
 
         if !wasActive && microphoneIsActive {
-            beginActionSession()
+            scheduleMicActionSession()
         } else if wasActive && !microphoneIsActive {
+            cancelMicActionSessionSchedule()
             endActionSession()
         }
     }
 
+    private func scheduleMicActionSession() {
+        micActionConfirmTask?.cancel()
+        micActionConfirmTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: micActionConfirmDelayNanoseconds)
+            guard !Task.isCancelled, isEnabled, baselineReady, microphoneIsActive else { return }
+            beginActionSession()
+        }
+    }
+
+    private func cancelMicActionSessionSchedule() {
+        micActionConfirmTask?.cancel()
+        micActionConfirmTask = nil
+    }
+
     private func handleMediaUpdate(_ snapshot: MediaSnapshot?) {
+        let wasPlaying = currentMedia?.isPlaying ?? false
         currentMedia = snapshot
+        if snapshot?.isPlaying == true, !wasPlaying {
+            cancelMicActionSessionSchedule()
+        }
+        applyEffectiveMicrophoneState(isInitial: false)
         guard var session = ownedPause else { return }
 
         guard let snapshot else {
@@ -340,27 +386,19 @@ final class AppModel: ObservableObject {
     }
 
     private func beginDuckSession() {
-        guard isEnabled, ownedDuck == nil else { return }
+        guard isEnabled, ownedDuck == nil, microphoneIsActive, actionMode == .duck else { return }
         statusText = "Checking system volume"
 
-        let preview = previewDuck
-        endVolumePreview(restore: false)
-
+        let previewSnapshot = previewDuck?.original
         let snapshot: SystemVolumeSnapshot
-        if let preview,
-           DuckPolicy.shouldRestore(
-            currentVolume: volumeController.snapshot()?.volume,
-            duckedTo: preview.duckedTo,
-            invalidated: false
-           ) {
-            snapshot = preview.original
+        if let previewSnapshot {
+            snapshot = previewSnapshot
         } else if let current = volumeController.snapshot() {
             snapshot = current
         } else {
             statusText = "Could not read system volume"
             return
         }
-        guard microphoneIsActive, isEnabled, actionMode == .duck else { return }
 
         let target = DuckPolicy.appliedTarget(
             originalVolume: snapshot.volume,
@@ -371,14 +409,34 @@ final class AppModel: ObservableObject {
             isMuted: snapshot.isMuted,
             targetVolume: target
         ) else {
+            if previewSnapshot != nil {
+                endVolumePreview(restore: true)
+            }
             statusText = snapshot.isMuted
                 ? "Output is muted; leaving volume unchanged"
                 : "Volume already at or below duck level"
             return
         }
 
+        guard microphoneIsActive, isEnabled, actionMode == .duck else {
+            if previewSnapshot != nil {
+                endVolumePreview(restore: true)
+            }
+            return
+        }
+
+        if previewSnapshot != nil {
+            endVolumePreview(restore: false)
+        }
+
         guard volumeController.setVolume(target) else {
             statusText = "Could not lower volume"
+            if previewSnapshot != nil {
+                _ = volumeController.setVolume(snapshot.volume)
+                if snapshot.isMuted {
+                    _ = volumeController.setMuted(true)
+                }
+            }
             return
         }
 
